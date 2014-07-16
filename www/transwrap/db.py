@@ -63,7 +63,7 @@ class _LasyConnection(object):
             connection = engine.connect()
             logging.info('open connection <%s>...' % hex(id(connection)))
             self.connection = connection
-        return self.connection
+        return self.connection.cursor()
 
     def commit(self):
         self.connection.commit()
@@ -305,8 +305,7 @@ def _update(sql, *args):
     sql = sql.replace('?', '%s')
     logging.info('SQL: %s, ARGS: %s' % (sql, args))
     try:
-        cursor = _db_ctx.connection.cursor()  # cursor is mysql conn
-        cursor = cursor.cursor()  # cursor now is mysql cursor
+        cursor = _db_ctx.connection.cursor()  
         cursor.execute(sql, args)
         r = cursor.rowcount
         print _db_ctx.transactions
@@ -333,15 +332,37 @@ def update(sql, *args):
     return _update(sql, *args)
 
 
+# test for doctest
+def factorial(n):
+    '''
+    >>> [factorial(n) for n in range(6)]
+    [1, 1, 2, 6, 24, 120]
+    '''
+    import math
+    if not n >= 0:
+        raise ValueError('n must be >= 0')
+    if math.floor(n) != n:
+        raise ValueError('n must be exact integer')
+    if n+1 == n:  # catch a value like 1e300
+        raise OverflowError('n too large')
+    result = 1
+    factor = 2
+    while factor <= n:
+        result *= factor
+        factor += 1
+    return result
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     create_engine('root', 'admin', 'awesome_webapp')
     update('drop table if exists user_tb')
     update('create table user_tb (id int primary key, name text, email text, passwd text, last_modified real)')
-#    import doctest
-#    doctest.testmod()
+    # doctest 作用：查找注释中命令行格式的代码片段，执行验证是否符合预期
+    # 没有输出是ok的，也可以python xx.py -v 查看
+    import doctest
+    doctest.testmod()
 
 
 
-    
+
 
