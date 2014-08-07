@@ -548,6 +548,16 @@ class Request(object):
             return r[0]
         return r
 
+    def get(self, key, default=None):
+        '''
+        '''
+        r = self._get_raw_input().get(key, default)
+        if isinstance(r, list):
+            return r[0]
+        return r
+
+
+
     def gets(self, key):
         '''
         Get multiple values for specified key.
@@ -1180,11 +1190,13 @@ def _build_interceptor_chain(last_fn, *interceptors):
     123
     '''
 
+    logging.info('_bulid_interceptor...')
     L = list(interceptors)
     L.reverse()
     fn = last_fn
     for f in L:
         fn = _build_interceptor_fn(f, fn)
+        logging.info('-- %s --' % f)
     return fn
 
 
