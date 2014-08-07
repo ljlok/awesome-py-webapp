@@ -2,7 +2,7 @@
 # -*- coding=utf-8 -*-
 
 
-import logging, os, re, time, base64, hashlib
+import logging, os, re, time, base64, hashlib, markdown2
 
 import sys
 sys.path.append('transwarp')
@@ -10,7 +10,7 @@ sys.path.append('transwarp')
 from web import get, view, post, ctx, interceptor, seeother, notfound
 
 from models import User, Blog, Comment
-from api import api, APIError, APIValueError, APIPermissionError, APIResourceNotFoundError
+from api import api, APIError, APIValueError, APIPermissionError, APIResourceNotFoundError, Page
 from config import configs
 
 _COOKIE_NAME = 'awesession'
@@ -34,6 +34,13 @@ def make_singed_cookie(id, password, max_age):
     expires = str(int(time.time() + (max_age or 86400)))
     L = [id, expires, hashlib.md5('%s-%s-%s-%s' % (id, password, expires, _COOKIE_KEY)).hexdigest()]
     return '-'.join(L)
+
+
+def check_admin():
+    user = ctx.request.user
+    if user and user.admin:
+        return
+    raise APIPermissionError('No permission')
 
 
 def parse_signed_cookie(cookie_str):
@@ -66,6 +73,15 @@ def user_interceptor(next):
             logging.info('bind user <%s> to session ...' % user.email)
     ctx.request.user = user
     return next()
+
+
+@interceptor('/manage/')
+def manage_interceptor(next):
+    user = ctx.request.user
+    if user and user.admin:
+        return next()
+    raise seeother('/signin')
+
 
 @view('blogs.html')
 @get('/')
@@ -106,11 +122,41 @@ def register_user():
     return user
 
 
+def _get_page_index():
+    page_index = 1
+    try:
+        page_index = int(ctx.request.get('page', '1'))
+    except ValueError:
+        pass
+    return page_index
+
+def _get_blogs_by_page():
+    total = Blog.count_all()
+    page = Page(total, _get_page_index(), 10)
+    blogs = Blog.find_by('order by created_at desc limit ?,?', page.offset, page.limit)
+    return blogs, page
+
+@api
+@get('/api/blogs')
+def api_get_blogs():
+    #format = ctx.request('format', '')
+    format = 'html'
+    blogs, page = _get_blogs_by_page()
+    if format == 'html':
+        for blog in blogs:
+            blog.content = markdown2.markdown(blog.content)
+    return dict(blogs=blogs, page=page)
+
 @view('signin.html')
 @get('/signin')
 def signin():
     return dict()
 
+
+@get('/signout')
+def signout():
+    ctx.response.delete_cookie(_COOKIE_NAME)
+    raise seeother('/')
 
 @api
 @post('/api/authenticate')
@@ -130,6 +176,39 @@ def authenticate():
     ctx.response.set_cookie(_COOKIE_NAME, cookie, max_age=max_age)
     user.password = '******'
     return user
+
+
+@api
+@post('/api/blogs')
+def api_create_blog():
+    check_admin()
+    i = ctx.request.input(name='', summary='', content='')
+    logging.info('api create blog...')
+    name = i.name.strip()
+    summary = i.summary.strip()
+    content = i.content.strip()
+    if not name:
+        raise APIValueError('name', 'name cannot be empty')
+    if not summary:
+        raise APIValueError('summary', 'summary cannot be empty')
+    if not content:
+        raise APIValueError('content', 'content cannot be empty')
+    user = ctx.request.user
+    blog = Blog(user_id=user.id, user_name=user.name, name=name, summary=summary, content=content)
+    blog.insert()
+    return blog
+
+
+@view('manage_blog_edit.html')
+@get('/manage/blogs/create')
+def manage_blog_create():
+    return dict(id=None, action='/api/blogs', redirect='/manage/blogs', user=ctx.request.user)
+
+
+@view('manage_blog_list.html')
+@get('/manage/blogs')
+def manage_blogs():
+    return dict(page_index=_get_page_index(), user=ctx.request.user)
 
 '''
 # just for test
