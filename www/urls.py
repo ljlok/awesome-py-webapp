@@ -114,7 +114,7 @@ def register_user():
     user = User.find_first('where email=?', email)
     if user:
         raise APIError('register:failed', 'email', 'Email is already used.')
-    user = User(name=name, email=email, password=password, image='imaeg_url_%s' % hashlib.md5(email).hexdigest())
+    user = User(name=name, email=email, password=password, image='image_url_%s' % hashlib.md5(email).hexdigest())
     user.insert()
     # make session cookie:
     cookie = make_singed_cookie(user.id, user.password, None)
@@ -146,6 +146,19 @@ def api_get_blogs():
         for blog in blogs:
             blog.content = markdown2.markdown(blog.content)
     return dict(blogs=blogs, page=page)
+
+
+@api
+@post('/api/blogs/:bid/delete')
+def api_delete_blog(bid):
+#    check_admin()
+    blog = Blog.get(bid)
+    if blog is None:
+        raise APIResourceNotFoundError('Blog not found')
+    blog.delete()
+    return dict(id=bid)
+
+
 
 @view('signin.html')
 @get('/signin')
@@ -205,10 +218,82 @@ def manage_blog_create():
     return dict(id=None, action='/api/blogs', redirect='/manage/blogs', user=ctx.request.user)
 
 
+@view('manage_blog_edit.html')
+@get('/manage/blogs/edit/:bid')
+def manage_blog_edit(bid):
+    blog = Blog.get(bid)
+    if blog is None:
+        raise notfound()
+#    return dict(id=blog.id, name=blog.name, summary=blog.summary, content=blog.content, action='/api/blogs/%s' % blog.id, redirect='/manage/blogs', user=ctx.request.user)
+    return dict(id=blog.id, name=blog.name, summary=blog.summary, content=blog.content, action='/api/blogs/update/%s' % blog.id, redirect='/manage/blogs', user=ctx.request.user)
+
+
+@api
+@post('/api/blogs/update/:bid')
+def api_update_blog(bid):
+    check_admin()
+    i = ctx.request.input(name='', summary='', content='')
+    name = i.name.strip()
+    summary = i.summary.strip()
+    content = i.content.strip()
+    if not name:
+        raise APIValueError('blog name', 'name cannot be empty')
+    if not summary:
+        raise APIValueError('blog summary', 'summary cannot be empty')
+    if not content:
+        raise APIValueError('blog content', 'content cannot be empty')
+    blog = Blog.get(bid)
+    blog.name = name
+    blog.summary = summary
+    blog.content = content
+    blog.update()
+    return blog
+
+
+'''
+@api
+@get('/api/blogs/:bid')
+def api_get_blogs(bid):
+    blog = Blog.get(bid)
+    if blog:
+        return blog
+    raise APIResourceNotFoundError('Blog')
+'''
+
+
 @view('manage_blog_list.html')
 @get('/manage/blogs')
 def manage_blogs():
     return dict(page_index=_get_page_index(), user=ctx.request.user)
+
+
+@view('blog_detail.html')
+@get('/blog/:bid')
+def get_blog(bid):
+    blog = Blog.get(bid)
+    if blog is None:
+        raise notfound()
+    blog.html_content = markdown2.markdown(blog.content)
+    comments = Comment.find_by('where blog_id=? order by created_at desc limit 1000', bid)
+    user = ctx.request.user
+    return dict(blog=blog, comments=comments, user=user)
+
+
+@api
+@post('/api/blogs/:bid/comments')
+def get_comments(bid):
+    user = ctx.request.user
+    if user is None:
+        raise APIPermissionError('Need signin')
+    blog = Blog.get(bid)
+    if blog is None:
+        raise APIResourceNotFoundError('Blog')
+    content = ctx.request.input(content='').content.strip()
+    if not content:
+        raise APIValueError('comment content')
+    c = Comment(blog_id=bid, user_id=user.id, user_name=user.name, user_image=user.image, content=content)
+    c.insert()
+    return dict(comment=c)
 
 '''
 # just for test
